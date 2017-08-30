@@ -20,5 +20,7 @@ Steps:
 1. Create a key pair in AWS environment
 2. Go to AWS cloud formation and create new stack using template given in repository.   
 Just select the Key created in previous step.  
+3. Once CREATE_COMPLETE flag appear then go to OUPUT tab and click on applicaiton url to see PHP page  
+
 
 
