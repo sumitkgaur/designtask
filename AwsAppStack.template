@@ -1,0 +1,451 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "AWS CloudFormation Template for a single instance deployment into an Auto Scaled, Load Balanced solution with S3 data storage.",
+    "Parameters": {
+        "WebServerKeyName": {
+            "Description": "Name of an existing Amazon EC2 KeyPair for SSH access",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+        },
+        "WebServerInstanceType": {
+            "Description": "WebServer EC2 instance type",
+            "Type": "String",
+            "Default": "t2.micro",
+            "AllowedValues": [
+                "t2.micro",
+                "m4.large"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        }
+    },
+    "Mappings": {
+        "AWSInstanceType2Arch": {
+            "t2.micro": {
+                "Arch": "64"
+            },
+            "m4.large": {
+                "Arch": "64"
+            }
+        },
+        "AWSRegionArch2AMI": {
+            "us-east-1": {
+                "64": "ami-a4827dc9"
+            },
+            "us-west-2": {
+                "64": "ami-f303fb93"
+            },
+            "us-west-1": {
+                "64": "ami-11790371"
+            },
+            "eu-west-1": {
+                "64": "ami-c39604b0"
+            },
+            "ap-southeast-1": {
+                "64": "ami-a2c111c1"
+            },
+            "ap-southeast-2": {
+                "64": "ami-d9d7f9ba"
+            },
+            "ap-northeast-1": {
+                "64": "ami-6154bb00"
+            },
+            "sa-east-1": {
+                "64": "ami-106ee57c"
+            },
+            "eu-central-1": {
+                "64": "ami-7df01e12"
+            },
+            "ap-northeast-2": {
+                "64": "ami-69e92207"
+            }
+        }
+    },
+    "Resources": {
+        "WebServerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable SSH access and HTTP from the load balancer only",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "SourceSecurityGroupOwnerId": {
+                            "Fn::GetAtt": [
+                                "ElasticLoadBalancer",
+                                "SourceSecurityGroup.OwnerAlias"
+                            ]
+                        },
+                        "SourceSecurityGroupName": {
+                            "Fn::GetAtt": [
+                                "ElasticLoadBalancer",
+                                "SourceSecurityGroup.GroupName"
+                            ]
+                        }
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "2c50244c-a7ff-473f-af1f-99fde96f978f"
+                }
+            }
+        },
+        "S3BucketForWebsiteContent": {
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+                "AccessControl": "PublicRead"
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "4db43b3b-055b-48e4-abd5-ae080a95131b"
+                }
+            }
+        },
+        "ElasticLoadBalancer": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties": {
+                "AvailabilityZones": {
+                    "Fn::GetAZs": ""
+                },
+                "Listeners": [
+                    {
+                        "LoadBalancerPort": "80",
+                        "InstancePort": "80",
+                        "Protocol": "HTTP"
+                    }
+                ],
+                "HealthCheck": {
+                    "Target": "HTTP:80/",
+                    "HealthyThreshold": "3",
+                    "UnhealthyThreshold": "5",
+                    "Interval": "30",
+                    "Timeout": "5"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "e3ea3faa-82fa-49b2-b990-2f056b4b001e"
+                }
+            }
+        },
+        "WebServerGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "AvailabilityZones": {
+                    "Fn::GetAZs": ""
+                },
+                "LaunchConfigurationName": {
+                    "Ref": "WebServerConfig"
+                },
+                "MinSize": "1",
+                "MaxSize": "3",
+                "LoadBalancerNames": [
+                    {
+                        "Ref": "ElasticLoadBalancer"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "b670026a-b105-4f71-ac50-677282054593"
+                }
+            }
+        },
+        "WebServerConfig": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Metadata": {
+                "Comment": "Install a simple PHP application",
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "packages": {
+                            "yum": {
+                                "httpd": [],
+                                "php": []
+                            }
+                        },
+                        "files": {
+                            "/var/www/html/index.php": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "<?php\n",
+                                            "echo '<h1>AWS CloudFormation sample PHP application</h1>';\n",
+                                            "echo 'Highly available, load balanced stack';\n ",
+                                            "?>\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000644",
+                                "owner": "apache",
+                                "group": "apache"
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "httpd": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true"
+                                },
+                                "sendmail": {
+                                    "enabled": "false",
+                                    "ensureRunning": "false"
+                                }
+                            }
+                        }
+                    }
+                },
+                "AWS::CloudFormation::Designer": {
+                    "id": "d728fd7e-530f-47ef-9b50-bdb6f14c78c0"
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Fn::FindInMap": [
+                        "AWSRegionArch2AMI",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        {
+                            "Fn::FindInMap": [
+                                "AWSInstanceType2Arch",
+                                {
+                                    "Ref": "WebServerInstanceType"
+                                },
+                                "Arch"
+                            ]
+                        }
+                    ]
+                },
+                "InstanceType": {
+                    "Ref": "WebServerInstanceType"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "WebServerSecurityGroup"
+                    }
+                ],
+                "KeyName": {
+                    "Ref": "WebServerKeyName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash\n",
+                                "yum update -y aws-cfn-bootstrap\n",
+                                "# Helper function\n",
+                                "function error_exit\n",
+                                "{\n",
+                                "  /opt/aws/bin/cfn-signal -e 1 -r \"$1\" '",
+                                {
+                                    "Ref": "WebServerWaitHandle"
+                                },
+                                "'\n",
+                                "  exit 1\n",
+                                "}\n",
+                                "# Install the simple web page\n",
+                                "/opt/aws/bin/cfn-init -s ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                " -r WebServerConfig ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                " || error_exit 'Failed to run cfn-init'\n",
+                                "# Start up the cfn-hup daemon to listen for changes to the Web Server metadata\n",
+                                "/opt/aws/bin/cfn-hup || error_exit 'Failed to start cfn-hup'\n",
+                                "# All done so signal success\n",
+                                "/opt/aws/bin/cfn-signal -e 0 -r \"WebServer setup complete\" '",
+                                {
+                                    "Ref": "WebServerWaitHandle"
+                                },
+                                "'\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "DependsOn": [
+                "S3BucketForWebsiteContent"
+            ]
+        },
+        "WebServerWaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle",
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "b2b196d9-24ff-42a3-a8be-fb9b60d20183"
+                }
+            }
+        },
+        "WebServerWaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "WebServerGroup",
+            "Properties": {
+                "Handle": {
+                    "Ref": "WebServerWaitHandle"
+                },
+                "Timeout": "600"
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "4d5aea9f-a47b-4981-b0a1-12bc599ad3a0"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "WebsiteURL": {
+            "Value": {
+                "Fn::Join": [
+                    "",
+                    [
+                        "http://",
+                        {
+                            "Fn::GetAtt": [
+                                "ElasticLoadBalancer",
+                                "DNSName"
+                            ]
+                        }
+                    ]
+                ]
+            },
+            "Description": "Application URL"
+        },
+        "BucketName": {
+            "Value": {
+                "Ref": "S3BucketForWebsiteContent"
+            },
+            "Description": "Name of the newly created Amazon S3 Distribution"
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Designer": {
+            "b2b196d9-24ff-42a3-a8be-fb9b60d20183": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": -20,
+                    "y": 90
+                },
+                "z": 1,
+                "embeds": []
+            },
+            "e3ea3faa-82fa-49b2-b990-2f056b4b001e": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 340,
+                    "y": 230
+                },
+                "z": 1,
+                "embeds": []
+            },
+            "4db43b3b-055b-48e4-abd5-ae080a95131b": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 70,
+                    "y": 150
+                },
+                "z": 1,
+                "embeds": []
+            },
+            "2c50244c-a7ff-473f-af1f-99fde96f978f": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 340,
+                    "y": 90
+                },
+                "z": 1,
+                "embeds": [],
+                "isrelatedto": [
+                    "e3ea3faa-82fa-49b2-b990-2f056b4b001e"
+                ]
+            },
+            "d728fd7e-530f-47ef-9b50-bdb6f14c78c0": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 190,
+                    "y": 90
+                },
+                "z": 1,
+                "embeds": [],
+                "isassociatedwith": [
+                    "2c50244c-a7ff-473f-af1f-99fde96f978f"
+                ],
+                "dependson": [
+                    "4db43b3b-055b-48e4-abd5-ae080a95131b"
+                ],
+                "isrelatedto": [
+                    "b2b196d9-24ff-42a3-a8be-fb9b60d20183"
+                ]
+            },
+            "b670026a-b105-4f71-ac50-677282054593": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 190,
+                    "y": 230
+                },
+                "z": 1,
+                "embeds": [],
+                "isassociatedwith": [
+                    "d728fd7e-530f-47ef-9b50-bdb6f14c78c0",
+                    "e3ea3faa-82fa-49b2-b990-2f056b4b001e"
+                ]
+            },
+            "4d5aea9f-a47b-4981-b0a1-12bc599ad3a0": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": -20,
+                    "y": 230
+                },
+                "z": 1,
+                "embeds": [],
+                "references": [
+                    "b2b196d9-24ff-42a3-a8be-fb9b60d20183"
+                ],
+                "dependson": [
+                    "b670026a-b105-4f71-ac50-677282054593"
+                ]
+            },
+            "09ca6d35-c0ac-462f-9429-903bd1509a69": {
+                "source": {
+                    "id": "d728fd7e-530f-47ef-9b50-bdb6f14c78c0"
+                },
+                "target": {
+                    "id": "4db43b3b-055b-48e4-abd5-ae080a95131b"
+                },
+                "z": 11
+            }
+        }
+    }
+}
