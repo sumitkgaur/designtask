@@ -1,5 +1,5 @@
 # Designtask
-Infrastructure-as-Code
+Infrastructure-as-Code  
 
 Created AWS cloudformation template to provision the infrastructure for a traditional 3-tier architecture in AWS .   
 Using PHP, Apache and S3 
@@ -15,3 +15,10 @@ AWS::CloudFormation::WaitCondition
 
 Infrastructure Diagram :  
 Uploaded in the repository  
+
+Steps:  
+1. Create a key pair in AWS environment
+2. Go to AWS cloud formation and create new stack using template given in repository.   
+Just select the Key created in previous step.  
+
+
